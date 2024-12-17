@@ -9,6 +9,9 @@ import { Loader2, Wand2, Download, Check } from 'lucide-react'
 import { cn } from "@/lib/utils"
 import { PageContainer } from "@/components/page-container"
 import Link from "next/link"
+import { generateBusinessCanvasPDF } from '@/lib/pdf/utils'
+import { toast } from 'sonner'
+import type { BusinessCanvas } from '@/types'
 
 const steps = [
   { id: 1, title: 'Canvas Details' },
@@ -19,17 +22,64 @@ export default function BusinessCanvasPage() {
   const [canvasName, setCanvasName] = useState("")
   const [prompt, setPrompt] = useState("")
   const [currentStep, setCurrentStep] = useState<'input' | 'generating' | 'complete'>('input')
+  const [generatedCanvas, setGeneratedCanvas] = useState<BusinessCanvas | null>(null)
   const router = useRouter()
 
   const handleGenerate = async () => {
     setCurrentStep('generating')
-    await new Promise(resolve => setTimeout(resolve, 3000))
-    setCurrentStep('complete')
+    try {
+      const response = await fetch('/api/generate-canvas', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: canvasName,
+          prompt,
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to generate canvas')
+      }
+
+      const data = await response.json()
+      if (data.error) {
+        throw new Error(data.error)
+      }
+
+      setGeneratedCanvas(data)
+      setCurrentStep('complete')
+    } catch (error) {
+      console.error('Generation error:', error)
+      toast.error(error.message || 'Failed to generate canvas')
+      setCurrentStep('input')
+    }
   }
 
-  const handleDownload = () => {
-    console.log("Downloading canvas...")
-    router.push("/workspace/dashboard")
+  const handleDownload = async () => {
+    if (!generatedCanvas) {
+      toast.error('No canvas data available')
+      return
+    }
+
+    try {
+      const pdfDataUri = generateBusinessCanvasPDF(generatedCanvas)
+      
+      // Create a link element and trigger download
+      const link = document.createElement('a')
+      link.href = pdfDataUri
+      link.download = `${canvasName.toLowerCase().replace(/\s+/g, '-')}-canvas.pdf`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      
+      toast.success('Canvas downloaded successfully')
+      router.push("/workspace/dashboard")
+    } catch (error) {
+      console.error('Error generating PDF:', error)
+      toast.error('Failed to generate PDF')
+    }
   }
 
   return (
